@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的理想家园</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    
+    <!-- Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        accent: '#F59E0B',
+                        dark: '#1E293B',
+                        light: '#F8FAFC'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .map-container {
+                background-image: 
+                    linear-gradient(to right, #6B7280 2px, transparent 2px),
+                    linear-gradient(to bottom, #6B7280 2px, transparent 2px);
+            }
+            .location-dot {
+                transition: all 0.3s ease;
+            }
+            .location-dot:hover {
+                transform: scale(1.1);
+                filter: brightness(1.2);
+            }
+            .location-dot.selected {
+                transform: scale(1.2);
+                box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.5);
+                animation: pulse 1.5s infinite;
+            }
+            @keyframes pulse {
+                0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+                70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+            }
+            .mode-active {
+                @apply bg-primary text-white;
+            }
+            .distance-line {
+                stroke-dasharray: 8,8;
+                animation: dash 1s linear infinite;
+            }
+            @keyframes dash {
+                to { stroke-dashoffset: 16; }
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen overflow-x-hidden">
+    <div class="container mx-auto px-4 py-6 max-w-7xl h-screen flex flex-col">
+        <!-- 标题区域 -->
+        <header class="text-center mb-4 flex-shrink-0">
+            <h1 class="text-[clamp(1.8rem,5vw,3rem)] font-bold text-dark mb-2">我的理想家园地图</h1>
+            <p class="text-gray-600 text-xl">教学演示用交互式地图</p>
+        </header>
+        
+        <!-- 核心内容区：左侧地图 + 右侧图例 -->
+        <div class="flex flex-col lg:flex-row gap-4 flex-grow overflow-hidden">
+            <!-- 左侧：地图及控制区 -->
+            <div class="lg:w-3/4 flex flex-col gap-4 overflow-hidden">
+                <!-- 控制区域 -->
+                <div class="bg-white rounded-lg shadow-lg p-3 flex flex-wrap gap-2 items-center justify-between flex-shrink-0">
+                    <div class="flex gap-2">
+                        <button id="moveModeBtn" class="px-4 py-2 rounded-md border-2 border-primary text-primary hover:bg-primary/10 transition mode-active text-xl">
+                            <i class="fa fa-arrows mr-1"></i>移动模式
+                        </button>
+                        <button id="distanceModeBtn" class="px-4 py-2 rounded-md border-2 border-primary text-primary hover:bg-primary/10 transition text-xl">
+                            <i class="fa fa-ruler mr-1"></i>距离模式
+                        </button>
+                        <button id="resetBtn" class="px-4 py-2 rounded-md border-2 border-gray-400 text-gray-700 hover:bg-gray-100 transition text-xl">
+                            <i class="fa fa-refresh mr-1"></i>重置
+                        </button>
+                    </div>
+                    
+                    <div class="flex items-center gap-4 text-gray-700">
+                        <!-- 放大比例尺和文字 -->
+                        <div class="flex items-center">
+                            <div class="w-64 h-4 bg-gray-200 relative mr-3">
+                                <div class="absolute inset-0 bg-gray-600 w-1/4"></div>
+                            </div>
+                            <span class="text-2xl font-medium">1:10000</span>
+                        </div>
+                        
+                        <!-- 简化的方向标：只保留向上的箭头和"北"字 -->
+                        <div class="w-12 h-16 relative flex flex-col items-center justify-center">
+                            <div class="text-lg font-bold text-red-600 mb-1">北</div>
+                            <div class="w-10 h-10 bg-white rounded-full shadow-md border-2 border-gray-300 flex items-center justify-center">
+                                <i class="fa fa-long-arrow-up text-red-500 text-2xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 地图容器 -->
+                <div class="relative bg-white rounded-lg shadow-xl overflow-hidden border-2 border-gray-200 flex-grow">
+                    <div id="map" class="map-container w-full h-full bg-gray-50" style="background-size: 80px 80px;">
+                        <!-- 地图内容动态生成 -->
+                    </div>
+                    
+                    <!-- 距离信息弹窗 -->
+                    <div id="distanceInfo" class="hidden absolute bg-white/95 backdrop-blur-sm px-4 py-2 rounded-lg shadow-xl text-dark border-2 border-gray-200 z-30">
+                        <p><span id="distanceText" class="text-xl font-bold"></span></p>
+                    </div>
+                </div>
+                
+                <!-- 使用说明（仅移动端显示） -->
+                <div class="lg:hidden bg-blue-50 rounded-lg p-3 border-2 border-blue-100 flex-shrink-0">
+                    <h3 class="font-bold text-blue-800 mb-2 text-xl">使用说明</h3>
+                    <ul class="list-disc pl-5 text-blue-700 space-y-1 text-base">
+                        <li><strong>移动模式</strong>：拖动地点调整位置</li>
+                        <li><strong>距离模式</strong>：单击两点看图上距离</li>
+                        <li>点击"重置"恢复初始位置</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- 右侧：图例（两列布局） -->
+            <div class="lg:w-1/4 overflow-y-auto">
+                <div class="bg-white rounded-lg shadow-lg p-4 h-full">
+                    <h2 class="text-2xl font-bold mb-4 text-dark text-center">图例说明</h2>
+                    <!-- 两列布局的图例容器 -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <!-- 图例项 -->
+                        <div class="flex items-center gap-2">
+                            <div class="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center text-white text-2xl shadow-md">
+                                <i class="fa fa-home"></i>
+                            </div>
+                            <span class="text-xl font-medium">我的家</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white text-2xl shadow-md">
+                                <i class="fa fa-shopping-bag"></i>
+                            </div>
+                            <span class="text-xl font-medium">商场</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center text-white text-2xl shadow-md">
+                                <i class="fa fa-futbol-o"></i>
+                            </div>
+                            <span class="text-xl font-medium">体育馆</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-12 h-12 rounded-full bg-green-600 flex items-center justify-center text-white text-2xl shadow-md">
+                                <i class="fa fa-tree"></i>
+                            </div>
+                            <span class="text-xl font-medium">公园</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-12 h-12 rounded-full bg-yellow-500 flex items-center justify-center text-white text-2xl shadow-md">
+                                <i class="fa fa-graduation-cap"></i>
+                            </div>
+                            <span class="text-xl font-medium">学校</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center text-white text-2xl shadow-md">
+                                <i class="fa fa-medkit"></i>
+                            </div>
+                            <span class="text-xl font-medium">医院</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-12 h-12 rounded-full bg-purple-500 flex items-center justify-center text-white text-2xl shadow-md">
+                                <i class="fa fa-heartbeat"></i>
+                            </div>
+                            <span class="text-xl font-medium">健身房</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-12 h-12 rounded-full bg-indigo-500 flex items-center justify-center text-white text-2xl shadow-md">
+                                <i class="fa fa-film"></i>
+                            </div>
+                            <span class="text-xl font-medium">电影院</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-12 h-12 rounded-full bg-gray-500 flex items-center justify-center text-white text-2xl shadow-md">
+                                <i class="fa fa-car"></i>
+                            </div>
+                            <span class="text-xl font-medium">停车场</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-12 h-12 rounded-full bg-teal-500 flex items-center justify-center text-white text-2xl shadow-md">
+                                <i class="fa fa-building"></i>
+                            </div>
+                            <span class="text-xl font-medium">市政府</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 使用说明（仅桌面端显示） -->
+                    <div class="mt-4 hidden lg:block bg-blue-50 rounded-lg p-3 border-2 border-blue-100">
+                        <h3 class="font-bold text-blue-800 mb-2 text-xl">使用说明</h3>
+                        <ul class="list-disc pl-5 text-blue-700 space-y-1 text-base">
+                            <li><strong>移动模式</strong>：拖动地点调整位置</li>
+                            <li><strong>距离模式</strong>：单击两点看图上距离</li>
+                            <li>点击"重置"恢复初始位置</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 地点数据
+        const locations = [
+            { id: 'home', name: '我的家', icon: 'fa-home', color: 'bg-red-500', x: 320, y: 240 },
+            { id: 'mall', name: '商场', icon: 'fa-shopping-bag', color: 'bg-blue-500', x: 560, y: 160 },
+            { id: 'stadium', name: '体育馆', icon: 'fa-futbol-o', color: 'bg-green-500', x: 720, y: 320 },
+            { id: 'park', name: '公园', icon: 'fa-tree', color: 'bg-green-600', x: 400, y: 480 },
+            { id: 'school', name: '学校', icon: 'fa-graduation-cap', color: 'bg-yellow-500', x: 160, y: 480 },
+            { id: 'hospital', name: '医院', icon: 'fa-medkit', color: 'bg-red-600', x: 640, y: 560 },
+            { id: 'gym', name: '健身房', icon: 'fa-heartbeat', color: 'bg-purple-500', x: 400, y: 80 },
+            { id: 'cinema', name: '电影院', icon: 'fa-film', color: 'bg-indigo-500', x: 560, y: 400 },
+            { id: 'parking', name: '停车场', icon: 'fa-car', color: 'bg-gray-500', x: 240, y: 80 },
+            { id: 'government', name: '市政府', icon: 'fa-building', color: 'bg-teal-500', x: 720, y: 160 }
+        ];
+        
+        // 应用状态
+        const state = {
+            mode: 'move', // 'move' 或 'distance'
+            selectedLocations: [],
+            distanceLine: null,
+            distanceInfo: null
+        };
+        
+        // 初始化地图
+        function initMap() {
+            const map = document.getElementById('map');
+            
+            // 创建SVG元素用于绘制距离线
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute('width', '100%');
+            svg.setAttribute('height', '100%');
+            svg.style.position = 'absolute';
+            svg.style.top = '0';
+            svg.style.left = '0';
+            svg.style.pointerEvents = 'none';
+            svg.style.zIndex = '20';
+            map.appendChild(svg);
+            
+            // 创建所有地点
+            locations.forEach(loc => {
+                createLocationMarker(map, loc);
+            });
+            
+            // 绑定模式切换事件
+            document.getElementById('moveModeBtn').addEventListener('click', () => setMode('move'));
+            document.getElementById('distanceModeBtn').addEventListener('click', () => setMode('distance'));
+            document.getElementById('resetBtn').addEventListener('click', resetMap);
+        }
+        
+        // 创建地点标记
+        function createLocationMarker(map, location) {
+            const marker = document.createElement('div');
+            marker.id = location.id;
+            marker.className = 'absolute cursor-pointer select-none';
+            marker.style.left = `${location.x}px`;
+            marker.style.top = `${location.y}px`;
+            marker.title = location.name; // 鼠标悬停显示名称
+            
+            const icon = document.createElement('div');
+            icon.className = `w-14 h-14 rounded-full ${location.color} flex items-center justify-center text-white shadow-lg location-dot z-10 border-2 border-white`;
+            icon.innerHTML = `<i class="fa ${location.icon} text-2xl"></i>`;
+            
+            marker.appendChild(icon);
+            map.appendChild(marker);
+            
+            // 绑定拖动事件（移动模式）
+            makeDraggable(marker, location);
+            
+            // 绑定单击事件（距离模式）
+            marker.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (state.mode === 'distance') {
+                    handleDistanceSelection(location, marker);
+                }
+            });
+        }
+        
+        // 使元素可拖动
+        function makeDraggable(element, location) {
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            const icon = element.querySelector('.location-dot');
+            
+            element.onmousedown = dragMouseDown;
+            
+            function dragMouseDown(e) {
+                if (state.mode !== 'move') return;
+                
+                e = e || window.event;
+                e.preventDefault();
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = elementDrag;
+                
+                // 拖动时视觉反馈
+                icon.classList.add('scale-110', 'shadow-xl');
+            }
+            
+            function elementDrag(e) {
+                if (state.mode !== 'move') return;
+                
+                e = e || window.event;
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                const newTop = (element.offsetTop - pos2) + 'px';
+                const newLeft = (element.offsetLeft - pos1) + 'px';
+                element.style.top = newTop;
+                element.style.left = newLeft;
+                
+                // 更新位置数据
+                location.x = element.offsetLeft;
+                location.y = element.offsetTop;
+            }
+            
+            function closeDragElement() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+                icon.classList.remove('scale-110', 'shadow-xl');
+            }
+        }
+        
+        // 处理距离选择
+        function handleDistanceSelection(location, marker) {
+            const svg = document.querySelector('#map svg');
+            const icon = marker.querySelector('.location-dot');
+            
+            if (state.selectedLocations.length >= 2) {
+                clearDistanceSelection();
+            }
+            
+            state.selectedLocations.push({
+                location,
+                element: marker
+            });
+            
+            // 高亮选中的点
+            icon.classList.add('selected');
+            
+            if (state.selectedLocations.length === 2) {
+                calculateDistance();
+            }
+        }
+        
+        // 计算距离
+        function calculateDistance() {
+            try {
+                const [loc1, loc2] = state.selectedLocations;
+                const svg = document.querySelector('#map svg');
+                
+                if (!svg || !loc1 || !loc2) {
+                    throw new Error("缺少必要的元素");
+                }
+                
+                const rect1 = loc1.element.getBoundingClientRect();
+                const rect2 = loc2.element.getBoundingClientRect();
+                const mapRect = document.getElementById('map').getBoundingClientRect();
+                
+                const x1 = rect1.left - mapRect.left + rect1.width / 2;
+                const y1 = rect1.top - mapRect.top + rect1.height / 2;
+                const x2 = rect2.left - mapRect.left + rect2.width / 2;
+                const y2 = rect2.top - mapRect.top + rect2.height / 2;
+                
+                const pixelDistance = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+                const cmDistance = pixelDistance * 2.54 / 96;
+                
+                const distanceText = `${loc1.location.name} 到 ${loc2.location.name} 的图上距离: ${cmDistance.toFixed(2)} 厘米`;
+                
+                if (state.distanceLine) {
+                    state.distanceLine.remove();
+                }
+                
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y2);
+                line.setAttribute('stroke', '#3B82F6');
+                line.setAttribute('stroke-width', '3');
+                line.setAttribute('class', 'distance-line');
+                svg.appendChild(line);
+                state.distanceLine = line;
+                
+                const distanceInfo = document.getElementById('distanceInfo');
+                document.getElementById('distanceText').textContent = distanceText;
+                
+                const infoWidth = 240;
+                const infoHeight = 50;
+                const infoLeft = Math.min(Math.max((x1 + x2) / 2 - infoWidth / 2, 10), mapRect.width - infoWidth - 10);
+                const infoTop = Math.min(Math.max((y1 + y2) / 2 - infoHeight / 2, 10), mapRect.height - infoHeight - 10);
+                
+                distanceInfo.style.left = `${infoLeft}px`;
+                distanceInfo.style.top = `${infoTop}px`;
+                distanceInfo.classList.remove('hidden');
+                state.distanceInfo = distanceInfo;
+                
+            } catch (error) {
+                console.error("计算距离时出错:", error);
+                alert("无法计算距离，请重试");
+                clearDistanceSelection();
+            }
+        }
+        
+        // 清除距离选择
+        function clearDistanceSelection() {
+            state.selectedLocations.forEach(item => {
+                const icon = item.element.querySelector('.location-dot');
+                if (icon) {
+                    icon.classList.remove('selected');
+                }
+            });
+            
+            if (state.distanceLine) {
+                state.distanceLine.remove();
+                state.distanceLine = null;
+            }
+            
+            if (state.distanceInfo) {
+                state.distanceInfo.classList.add('hidden');
+                state.distanceInfo = null;
+            }
+            
+            state.selectedLocations = [];
+        }
+        
+        // 设置模式
+        function setMode(mode) {
+            state.mode = mode;
+            
+            if (mode === 'move') {
+                document.getElementById('moveModeBtn').classList.add('mode-active');
+                document.getElementById('distanceModeBtn').classList.remove('mode-active');
+            } else {
+                document.getElementById('moveModeBtn').classList.remove('mode-active');
+                document.getElementById('distanceModeBtn').classList.add('mode-active');
+            }
+            
+            clearDistanceSelection();
+        }
+        
+        // 重置地图
+        function resetMap() {
+            locations.forEach(loc => {
+                const marker = document.getElementById(loc.id);
+                if (marker) {
+                    marker.style.left = `${loc.x}px`;
+                    marker.style.top = `${loc.y}px`;
+                    const icon = marker.querySelector('.location-dot');
+                    if (icon) {
+                        icon.classList.remove('selected');
+                    }
+                }
+            });
+            
+            clearDistanceSelection();
+        }
+        
+        // 初始化地图
+        window.addEventListener('load', initMap);
+    </script>
+</body>
+</html>
+    
